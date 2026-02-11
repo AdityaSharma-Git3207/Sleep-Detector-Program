@@ -1,4 +1,4 @@
-# Drive Alarm  
+# Sleep Detector Program  
 ### Real-Time Driver Drowsiness Detection System
 
 A real-time computer vision system that detects driver drowsiness using facial landmark analysis and triggers an audible alert to help prevent fatigue-related accidents.
