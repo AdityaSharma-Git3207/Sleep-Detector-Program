@@ -4,92 +4,103 @@ from scipy.spatial import distance
 import numpy as np
 import os
 import pygame
+import time 
 
-# Initialize pygame mixer
+
 pygame.mixer.init()
 
-# Load alert sound
-alert_sound = pygame.mixer.Sound("C:/Users/Utkarsh/Downloads/audio.wav")
+alert_sound = pygame.mixer.Sound("assets/beep.mp3")
 
-#"C:\Users\Utkarsh\Documents\py\audiob.mp3"
 
 def shape_to_np(shape, dtype="int"):
-    # initialize the list of (x, y)-coordinates
     coords = np.zeros((68, 2), dtype=dtype)
-
-    # loop over the 68 facial landmarks and convert them to a 2-tuple of (x, y)-coordinates
     for i in range(0, 68):
         coords[i] = (shape.part(i).x, shape.part(i).y)
-
-    # return the list of (x, y)-coordinates
     return coords
 
-# Get the absolute path to the file
-file_path = os.path.abspath("C:/Users/Utkarsh/Downloads/shape_predictor_68_face_landmarks.dat")
 
-# Load the face detector and facial landmark predictor from dlib
+
+file_path = "assets/shape_predictor_68_face_landmarks.dat"
+
+
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(file_path)
 
-# Function to calculate Eye Aspect Ratio (EAR)
+
 def eye_aspect_ratio(eye):
-    # Calculate the Euclidean distances between the vertical eye landmarks
     A = distance.euclidean(eye[1], eye[5])
     B = distance.euclidean(eye[2], eye[4])
-
-    # Calculate the Euclidean distance between the horizontal eye landmarks
     C = distance.euclidean(eye[0], eye[3])
-
-    # Calculate the EAR
     ear = (A + B) / (2.0 * C)
     return ear
 
-# Load the video capture
+
+EAR_THRESHOLD = 0.25           
+EAR_CONSEC_FRAMES = 20         
+ALERT_COOLDOWN_SEC = 2.0       
+
+drowsy_counter = 0
+last_alert_time = 0
+alert_active = False
+# -----------------------------------------------------------
+
+
 cap = cv2.VideoCapture(0)
 
 while True:
-    # Read a frame from the video capture
     ret, frame = cap.read()
+    if not ret:
+        break
 
-    # Convert the frame to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    # Detect faces in the frame
     faces = detector(gray)
 
     for face in faces:
-        # Get facial landmarks
         shape = predictor(gray, face)
         shape = shape_to_np(shape)
 
-        # Extract the left and right eye landmarks
         left_eye = shape[42:48]
         right_eye = shape[36:42]
 
-        # Calculate the EAR for each eye
         left_ear = eye_aspect_ratio(left_eye)
         right_ear = eye_aspect_ratio(right_eye)
 
-        # Average the EAR for both eyes
         avg_ear = (left_ear + right_ear) / 2.0
 
-        # Set a threshold for detecting drowsiness
-        threshold = 0.25
+        if avg_ear < EAR_THRESHOLD:
+            drowsy_counter += 1
 
-        # Check if the EAR is below the threshold
-        if avg_ear < threshold:
-            cv2.putText(frame, "Drowsiness Detected", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            # Play alert sound
-            alert_sound.play()
+            # Show progress counter on screen
+            cv2.putText(frame, f"EAR: {avg_ear:.3f}", (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-    # Display the frame
+            # Trigger only if it's low for enough frames
+            if drowsy_counter >= EAR_CONSEC_FRAMES:
+                cv2.putText(frame, "Drowsiness Detected", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                current_time = time.time()
+                if (current_time - last_alert_time) > ALERT_COOLDOWN_SEC:
+                    alert_sound.play()
+                    last_alert_time = current_time
+
+                alert_active = True
+
+        else:
+            # Reset when eyes open again
+            drowsy_counter = 0
+            alert_active = False
+
+            # show ear
+            cv2.putText(frame, f"EAR: {avg_ear:.3f}", (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
     cv2.imshow("Driver Fatigue Detection", frame)
 
-    # Break the loop if 'q' is pressed
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Release the video capture and close all windows
+
 cap.release()
 cv2.destroyAllWindows()
